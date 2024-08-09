@@ -3,79 +3,55 @@ import logging
 
 import aiohttp
 import pandas as pd
+import numpy as np
 from google.cloud import bigquery
 
 logger = logging.getLogger(__name__)
 
 query = """
-  SELECT
-    u.user_id
-  , credit_score
-  , 0 AS acv
-  , selected_packages
-  , zip_code
-  , state
-  , DATE_DIFF(CURRENT_DATE(), DATE(u.date_of_birth), YEAR) AS age
-  , gender
-  , CASE
-        WHEN selected_packages = 'minimum-liability-az'
-            THEN '25/50'
-        WHEN selected_packages = 'full-cover-az'
-            THEN '25/50'
-        WHEN selected_packages = 'regular-coverage-az'
-            THEN '50/100'
-    END               AS bi
-  , CASE
-        WHEN selected_packages = 'minimum-liability-az'
-            THEN '15000'
-        WHEN selected_packages = 'full-cover-az'
-            THEN '15000'
-        WHEN selected_packages = 'regular-coverage-az'
-            THEN '50000'
-    END               AS pd
-  , CASE
-        WHEN selected_packages = 'minimum-liability-az'
-            THEN 'None'
-        WHEN selected_packages = 'full-cover-az'
-            THEN '500'
-        WHEN selected_packages = 'regular-coverage-az'
-            THEN '500'
-    END               AS comp
-  , CASE
-        WHEN selected_packages = 'minimum-liability-az'
-            THEN 'None'
-        WHEN selected_packages = 'full-cover-az'
-            THEN '500'
-        WHEN selected_packages = 'regular-coverage-az'
-            THEN '500'
-    END               AS coll
-  , dpv.make
-  , dpv.model
-  , dpv.year
-  , dpv.vin
-  , policy_active
-    FROM
-        `data-warehouse-267920`.just_dim_warehouse.dim_user u
-            INNER JOIN `data-warehouse-267920`.just_dim_warehouse.dim_policy_vehicle dpv
-                       ON u.user_id = dpv.user_id
-    WHERE
-          policy_active IS NOT NULL
-      AND date_of_birth IS NOT NULL
-      AND selected_packages IS NOT NULL
-      AND credit_score IS NOT NULL
+SELECT
+  quote_id ,
+  user_id ,
+  zipcode,
+  case when substr(driver_classification, 1,1) = "M" then "male" else "female" end as gender ,
+  substr(driver_classification, 2,2) as age ,
+  vin ,
+  carYear ,
+  case when inflection_score is not null then inflection_score
+       when inflection_status = "Unavailable" and inflection_score is null then 400
+       when inflection_status = "InsufficientData" and inflection_score is null then 525
+       else null end as credit_score,
+  case when vio_1_code != "0" then 1 else 0 end as vio_1,
+  case when vio_2_code != "0" then 1 else 0 end as vio_2 ,
+  case when acc_1_code != "0" then 1 else 0 end as acc_1 ,
+  case when acc_2_code != "0" then 1 else 0 end as acc_2 ,
+  "{bi}" as bi,
+  "{pd}" as pd ,
+  "{comp}" as comp,
+  "{coll}" as coll ,
+  "{marital_status}" as marital_status,
+  {days_lapsed} as days_lapsed
+FROM `data-warehouse-267920.pricing_hub.elasticity_quotes`
+where inflection_status is not null and quote_created_at>= '2024-05-01'
+qualify row_number() over (partition by user_id  order by quote_created_at desc) = 1
+limit 5
+/*
       AND (
             date(u.update_date) > current_date() - 1 
             OR
-            u.user_id not in (select user_id from `price_comparison.competitor_prices_by_user`))"""
+            u.user_id not in (select user_id from `price_comparison.competitor_prices_by_user`))
+*/            
+"""
 
 
 async def run_main():
     client = bigquery.Client("data-warehouse-267920")
-    query_job = client.query(query)
+    # query_job = client.query(query)
+    query_job = client.query(query.format(bi="25/50", pd="15000", comp="500", coll="500", marital_status="single", days_lapsed=0 ))
     df = query_job.to_dataframe()
 
     # url = "http://127.0.0.1:8000/compare"
-    url = "https://comparator-axjyerdcyq-uc.a.run.app/compare"
+    url = "https://comparator-stg-axjyerdcyq-uc.a.run.app/compare"
 
     difference_list = []
     exception_list = []
@@ -109,7 +85,6 @@ async def run_main():
 
     # modifying data to fit api requirements
     async def run_sample():
-        # for row in df.sample(10**4).iterrows():
         async with aiohttp.ClientSession() as session:
             tasks = []
             for row in df.iterrows():
@@ -132,18 +107,23 @@ async def run_main():
                 else:
                     row['credit_score'] = 400
 
+                acv = np.minimum(2, row['vio_1'] + row['vio_2'] + row['acc_1'] + row['acc_2'])
+
+
                 payload = {
                     "state": "AZ",
                     "age": row["age"],
                     "gender": row["gender"].lower(),
-                    # "marital_status": row[""].lower(), # default to single
-                    "acv": row["acv"],
+                    "marital_status": row["marital_status"],
+                    "acv": str(acv),
                     "zip": str(row["zip_code"]),
                     "insurance_score": str(row["credit_score"]),
-                    "pd_limit": str(row["pd"]),
-                    "bi_limit": str(row["bi"]),
-                    "comp_deductible": str(row['comp']),
-                    "coll_deductible": str(row["coll"]),
+                    "pd_limit": str("15000"),
+                    "bi_limit": str("25/50"),
+                    "comp_deductible": str(cp),
+                    "coll_deductible": str(cl),
+                    "marital_status": str(ms),
+                    "days_lapsed": str(days),
                     "vehicle": {
                         "make": row["make"],
                         "model": row["model"],
