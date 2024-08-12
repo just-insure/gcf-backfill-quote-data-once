@@ -30,7 +30,7 @@ SELECT
   "{comp}" as comp,
   "{coll}" as coll ,
   "{marital_status}" as marital_status,
-  {days_lapsed} as days_lapsed
+  "{days_lapsed}" as days_lapsed
 FROM `data-warehouse-267920.pricing_hub.elasticity_quotes`
 where inflection_status is not null and quote_created_at>= '2024-05-01'
 qualify row_number() over (partition by user_id  order by quote_created_at desc) = 1
@@ -87,50 +87,64 @@ async def run_main():
     async def run_sample():
         async with aiohttp.ClientSession() as session:
             tasks = []
-            for row in df.iterrows():
-                row = row[1]
-                # partial vin from vin with wildcard for check (1gykpdrs.r)
-                partial_vin = row["vin"][:8].upper() + '.' + row["vin"][9].upper()
 
-                # insurance_score
-                # 800
-                # 525
-                # 675
-                # 400
-
-                if row['credit_score'] >= 800:
-                    row['credit_score'] = 800
-                elif row['credit_score'] >= 675:
-                    row['credit_score'] = 675
-                elif row['credit_score'] >= 525:
-                    row['credit_score'] = 525
+            for k in [  1]:
+                if k == 0:
+                    cp = "500"
+                    cl = "500"
                 else:
-                    row['credit_score'] = 400
+                    cp = "None"
+                    cl = "None"
+                for ms in [  "single"]:
+                    for days in [ 0]:
+                        competitor_data = pd.DataFrame(columns=["quote_id", "bi_limits", "pd_limits", "comp_deductible", "coll_deductible", "days_lapsed", "marital_status", "carrier", "estimate"])
 
-                acv = np.minimum(2, row['vio_1'] + row['vio_2'] + row['acc_1'] + row['acc_2'])
+                        query_job = client.query(query.format(bi="25/50", pd="15000", comp=cp, coll=cl, marital_status=ms, days_lapsed=days))
+                        df = query_job.to_dataframe()
 
+                        for row in df.iterrows():
+                            row = row[1]
+                            # partial vin from vin with wildcard for check (1gykpdrs.r)
+                            partial_vin = row["vin"][:8].upper() + '.' + row["vin"][9].upper()
 
-                payload = {
-                    "state": "AZ",
-                    "age": row["age"],
-                    "gender": row["gender"].lower(),
-                    "marital_status": row["marital_status"],
-                    "acv": str(acv),
-                    "zip": str(row["zip_code"]),
-                    "insurance_score": str(row["credit_score"]),
-                    "pd_limit": str("15000"),
-                    "bi_limit": str("25/50"),
-                    "comp_deductible": str(cp),
-                    "coll_deductible": str(cl),
-                    "marital_status": str(ms),
-                    "days_lapsed": str(days),
-                    "vehicle": {
-                        "make": row["make"],
-                        "model": row["model"],
-                        "year": row["year"],
-                        "partial_vin": partial_vin
-                    }
-                }
+                            # insurance_score
+                            # 800
+                            # 525
+                            # 675
+                            # 400
+
+                            if row['credit_score'] >= 800:
+                                row['credit_score'] = 800
+                            elif row['credit_score'] >= 675:
+                                row['credit_score'] = 675
+                            elif row['credit_score'] >= 525:
+                                row['credit_score'] = 525
+                            else:
+                                row['credit_score'] = 400
+
+                            acv = np.minimum(2, row['vio_1'] + row['vio_2'] + row['acc_1'] + row['acc_2'])
+
+                            payload = {
+                                "state": "AZ",
+                                "age": row["age"],
+                                "gender": row["gender"].lower(),
+                                "marital_status": row["marital_status"],
+                                "acv": str(acv),
+                                "zip": str(row["zip_code"]),
+                                "insurance_score": str(row["credit_score"]),
+                                "pd_limit": str("15000"),
+                                "bi_limit": str("25/50"),
+                                "comp_deductible": str(cp),
+                                "coll_deductible": str(cl),
+                                "marital_status": str(ms),
+                                "days_lapsed": str(days),
+                                "vehicle": {
+                                    "make": row["make"],
+                                    "model": row["model"],
+                                    "year": row["year"],
+                                    "partial_vin": partial_vin
+                                }
+                            }
                 tasks.append(fetch_comparison(session, payload, url, row.name, row['user_id']))
                 # print(payload)
             await asyncio.gather(*tasks)
