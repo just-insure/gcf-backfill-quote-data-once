@@ -139,9 +139,6 @@ async def run_main():
                                 "marital_status": str(ms),
                                 "days_lapsed": str(days),
                                 "vehicle": {
-                                    "make": row["make"],
-                                    "model": row["model"],
-                                    "year": row["year"],
                                     "partial_vin": partial_vin
                                 }
                             }
