@@ -12,7 +12,7 @@ query = """
 SELECT
   quote_id ,
   user_id ,
-  zipcode,
+  zipcode zip_code,
   case when substr(driver_classification, 1,1) = "M" then "male" else "female" end as gender ,
   substr(driver_classification, 2,2) as age ,
   vin ,
